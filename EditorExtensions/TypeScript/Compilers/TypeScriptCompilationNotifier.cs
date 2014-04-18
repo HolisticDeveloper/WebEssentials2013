@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using EnvDTE;
 using MadsKristensen.EditorExtensions.Commands;
 using MadsKristensen.EditorExtensions.Compilers;
@@ -113,6 +114,7 @@ namespace MadsKristensen.EditorExtensions.TypeScript
 
         ///<summary>Occurs when the file has been compiled (on both success and failure).</summary>
         public event EventHandler<CompilerResultEventArgs> CompilationReady;
+
         ///<summary>Raises the CompilationReady event.</summary>
         ///<param name="e">A CompilerResultEventArgs object that provides the event data.</param>
         protected virtual void OnCompilationReady(CompilerResultEventArgs e)
@@ -121,7 +123,7 @@ namespace MadsKristensen.EditorExtensions.TypeScript
                 CompilationReady(this, e);
         }
 
-        private void FileTouched(object sender, FileSystemEventArgs e)
+        private async void FileTouched(object sender, FileSystemEventArgs e)
         {
             // The check for _isReady is in place to deal with the issue where
             // FileSystemWatcher fires twice per file change.
@@ -133,39 +135,39 @@ namespace MadsKristensen.EditorExtensions.TypeScript
 
             if (File.Exists(TargetFilePath))
             {
-                RaiseReady();
+                RaiseReady().DoNotWait("reading " + TargetFilePath + "file");
 
                 foreach (var listener in _listeners)
-                    listener.FileSaved(ContentTypeManager.GetContentType("JavaScript"), TargetFilePath, false, false);
+                    await listener.FileSaved(ContentTypeManager.GetContentType("JavaScript"), TargetFilePath, false, false);
             }
             _isReady = false;
         }
 
-        public void RequestCompilationResult(bool cached)
+        public async void RequestCompilationResult(bool cached)
         {
             if (File.Exists(TargetFilePath))
-                RaiseReady();
+                RaiseReady().DoNotWait("reading " + TargetFilePath + "file");
             else
                 OnCompilationReady(new CompilerResultEventArgs(
-                    CompilerResultFactory.GenerateResult(
-                        sourceFileName: SourceFilePath,
-                        targetFileName: null,
-                        isSuccess: true,   // HACK: Set IsSuccess to true to force margin to display result
-                        result: "// Not compiled to disk yet",
-                        errors: null
-                    )));
+                         await CompilerResultFactory.GenerateResult(
+                                  sourceFileName: SourceFilePath,
+                                  targetFileName: null,
+                                  isSuccess: true,   // HACK: Set IsSuccess to true to force margin to display result
+                                  result: "// Not compiled to disk yet",
+                                  errors: null
+                              )));
         }
 
-        private void RaiseReady()
+        private async Task RaiseReady()
         {
             OnCompilationReady(new CompilerResultEventArgs(
-                CompilerResultFactory.GenerateResult(
-                    sourceFileName: SourceFilePath,
-                    targetFileName: TargetFilePath,
-                    isSuccess: true,
-                    result: File.ReadAllText(TargetFilePath),
-                    errors: null
-                )));
+                     await CompilerResultFactory.GenerateResult(
+                              sourceFileName: SourceFilePath,
+                              targetFileName: TargetFilePath,
+                              isSuccess: true,
+                              result: await FileHelpers.ReadAllTextRetry(TargetFilePath),
+                              errors: null
+                          )));
         }
     }
 }

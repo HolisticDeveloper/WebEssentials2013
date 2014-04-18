@@ -1,6 +1,6 @@
 ﻿using System;
-using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
@@ -13,6 +13,7 @@ namespace MadsKristensen.EditorExtensions.Margin
 {
     public class CssTextViewMargin : TextViewMargin
     {
+        private MenuItem _goToMenuItem { get; set; }
         private CssCompilerResult _compilerResult { get; set; }
 
         public CssTextViewMargin(string targetContentType, ITextDocument document, IWpfTextView sourceView)
@@ -25,10 +26,7 @@ namespace MadsKristensen.EditorExtensions.Margin
             {
                 _compilerResult = result as CssCompilerResult;
 
-                if (SourceTextView.Properties.ContainsProperty("CssCompilerResult"))
-                    SourceTextView.Properties.RemoveProperty("CssCompilerResult");
-
-                SourceTextView.Properties.AddProperty("CssCompilerResult", _compilerResult);
+                UpdateResults().DoNotWait("updating TextView property");
                 SetText(result.Result);
             }
             else
@@ -37,32 +35,53 @@ namespace MadsKristensen.EditorExtensions.Margin
                       + "\r\n\r\n*/");
         }
 
+        private async Task UpdateResults()
+        {
+            if (_compilerResult != null)
+            {
+                if (SourceTextView.Properties.ContainsProperty("CssSourceMap"))
+                    SourceTextView.Properties.RemoveProperty("CssSourceMap");
+
+                SourceTextView.Properties.AddProperty("CssSourceMap", await _compilerResult.SourceMap.ConfigureAwait(false));
+            }
+        }
+
         protected override void AddSpecialItems(ItemsControl menu)
         {
-            menu.Items.Add(new MenuItem()
+            if (_goToMenuItem != null && PreviewTextHost.TextView.VisualElement.ContextMenu.Items.Contains(_goToMenuItem))
+                PreviewTextHost.TextView.VisualElement.ContextMenu.Items.Remove(_goToMenuItem);
+
+            _goToMenuItem = new MenuItem()
             {
                 Header = "Go To Definition",
                 InputGestureText = "F12",
                 Command = new GoToDefinitionCommand(GoToDefinitionCommandHandler, () =>
-                { return _compilerResult != null && _compilerResult.SourceMap != null; })
-            });
+                { return _compilerResult != null && _compilerResult.SourceMap.IsCompleted && SourceTextView.Properties.ContainsProperty("CssSourceMap"); })
+            };
+
+            menu.Items.Add(_goToMenuItem);
         }
 
-        private void GoToDefinitionCommandHandler()
+        private async void GoToDefinitionCommandHandler()
         {
             var buffer = PreviewTextHost.TextView.TextBuffer;
             var position = PreviewTextHost.TextView.Selection.Start.Position;
             var containingLine = position.GetContainingLine();
             int line = containingLine.LineNumber;
             var tree = CssEditorDocument.FromTextBuffer(buffer);
-            Selector selector = tree.StyleSheet.ItemBeforePosition(position).FindType<Selector>();
+            var item = tree.StyleSheet.ItemBeforePosition(position);
+
+            if (item == null)
+                return;
+
+            Selector selector = item.FindType<Selector>();
 
             if (selector == null)
                 return;
 
             int column = Math.Max(0, selector.SimpleSelectors.Last().Start - containingLine.Start - 1);
 
-            var sourceInfoCollection = _compilerResult.SourceMap.MapNodes.Where(s => s.GeneratedLine == line && s.GeneratedColumn == column);
+            var sourceInfoCollection = (await _compilerResult.SourceMap).MapNodes.Where(s => s.GeneratedLine == line && s.GeneratedColumn == column);
 
             if (!sourceInfoCollection.Any())
             {
@@ -74,7 +93,7 @@ namespace MadsKristensen.EditorExtensions.Margin
                 var point = selector.SimpleSelectors.Last().PreviousSibling.AfterEnd - 1;
 
                 column = Math.Max(0, point - containingLine.Start - 1);
-                sourceInfoCollection = _compilerResult.SourceMap.MapNodes.Where(s => s.GeneratedLine == line && s.GeneratedColumn == column);
+                sourceInfoCollection = (await _compilerResult.SourceMap).MapNodes.Where(s => s.GeneratedLine == line && s.GeneratedColumn == column);
 
                 if (!sourceInfoCollection.Any())
                     return;
@@ -85,7 +104,7 @@ namespace MadsKristensen.EditorExtensions.Margin
             if (sourceInfo.SourceFilePath != Document.FilePath)
                 FileHelpers.OpenFileInPreviewTab(sourceInfo.SourceFilePath);
 
-            string content = File.ReadAllText(sourceInfo.SourceFilePath);
+            string content = await FileHelpers.ReadAllTextRetry(sourceInfo.SourceFilePath);
 
             var finalPositionInSource = content.NthIndexOfCharInString('\n', (int)sourceInfo.OriginalLine) + sourceInfo.OriginalColumn;
 

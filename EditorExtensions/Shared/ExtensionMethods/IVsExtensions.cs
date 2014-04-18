@@ -104,9 +104,7 @@ namespace MadsKristensen.EditorExtensions
         {
             IVsTextBuffer bufferAdapter;
 
-            owner.Properties.TryGetProperty(typeof(IVsTextBuffer), out bufferAdapter);
-
-            if (bufferAdapter == null)
+            if (!owner.Properties.TryGetProperty(typeof(IVsTextBuffer), out bufferAdapter))
                 return null;
 
             var persistFileFormat = bufferAdapter as IPersistFileFormat;
@@ -115,7 +113,14 @@ namespace MadsKristensen.EditorExtensions
             int returnCode = -1;
 
             if (persistFileFormat != null)
-                returnCode = persistFileFormat.GetCurFile(out ppzsFilename, out pnFormatIndex);
+                try
+                {
+                    returnCode = persistFileFormat.GetCurFile(out ppzsFilename, out pnFormatIndex);
+                }
+                catch (NotImplementedException)
+                {
+                    return null;
+                }
 
             if (returnCode != VSConstants.S_OK)
                 return null;

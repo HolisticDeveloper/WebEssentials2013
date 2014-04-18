@@ -6,7 +6,6 @@ using EnvDTE;
 using EnvDTE80;
 using MadsKristensen.EditorExtensions.Settings;
 using Microsoft.VisualStudio.Shell;
-using Microsoft.VisualStudio.Shell.Interop;
 
 namespace MadsKristensen.EditorExtensions
 {
@@ -40,7 +39,7 @@ namespace MadsKristensen.EditorExtensions
 
         void SolutionEvents_Opened()
         {
-            System.Threading.Tasks.Task.Run(() => BundleFilesMenu.BindAllBundlesAssets(_dte.Solution.FullName));
+            System.Threading.Tasks.Task.Run(() => BundleFilesMenu.BindAllBundlesAssets(ProjectHelpers.GetSolutionFolderPath()));
         }
 
         private void SolutionBeforeQueryStatus(object sender, EventArgs e)

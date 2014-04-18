@@ -16,11 +16,10 @@ using Microsoft.VisualStudio.Utilities;
 
 namespace MadsKristensen.EditorExtensions
 {
-    [Export(typeof(IWpfTextViewCreationListener))]
     [ContentType("CSharp")]
     [ContentType("VisualBasic")]
     [TextViewRole(PredefinedTextViewRoles.Document)]
-    public class IntellisenseParser : IWpfTextViewCreationListener
+    public class IntellisenseParser
     {
         private const string DefaultModuleName = "server";
         private const string ModuleNameAttributeName = "TypeScriptModule";
@@ -32,71 +31,14 @@ namespace MadsKristensen.EditorExtensions
             public const string TypeScript = ".d.ts";
         }
 
-        [Import]
-        public ITextDocumentFactoryService TextDocumentFactoryService { get; set; }
-
-        private ITextDocument _document;
-
-        public void TextViewCreated(IWpfTextView textView)
-        {
-            if (TextDocumentFactoryService.TryGetTextDocument(textView.TextDataModel.DocumentBuffer, out _document))
-            {
-                _document.FileActionOccurred += document_FileActionOccurred;
-            }
-        }
-
-        private void document_FileActionOccurred(object sender, TextDocumentFileActionEventArgs e)
-        {
-            ITextDocument document = (ITextDocument)sender;
-
-            if (document.TextBuffer == null || e.FileActionType != FileActionTypes.ContentSavedToDisk)
-                return;
-
-            Process(e.FilePath);
-        }
-
-        private static Task<bool> Process(string filePath)
-        {
-            if (!File.Exists(filePath + Ext.JavaScript) && !File.Exists(filePath + Ext.TypeScript))
-                return Task.FromResult(false);
-
-            return Dispatcher.CurrentDispatcher.InvokeAsync(new Func<bool>(() =>
-            {
-                var item = ProjectHelpers.GetProjectItem(filePath);
-
-                if (item == null)
-                    return false;
-
-                List<IntellisenseObject> list = null;
-
-                try
-                {
-                    list = ProcessFile(item);
-                }
-                catch (Exception ex)
-                {
-                    Logger.Log("An error occurred while processing code in " + filePath + "\n" + ex
-                             + "\n\nPlease report this bug at https://github.com/madskristensen/WebEssentials2013/issues, and include the source of the file.");
-                }
-
-                if (list == null)
-                    return false;
-
-                AddScript(filePath, Ext.JavaScript, list);
-                AddScript(filePath, Ext.TypeScript, list);
-
-                return true;
-            }), DispatcherPriority.ApplicationIdle).Task;
-        }
-
-        private static void AddScript(string filePath, string extension, IEnumerable<IntellisenseObject> list)
+        private async static Task AddScript(string filePath, string extension, IEnumerable<IntellisenseObject> list)
         {
             string resultPath = filePath + extension;
 
             if (!File.Exists(resultPath))
                 return;
 
-            IntellisenseWriter.Write(list, resultPath);
+            await IntellisenseWriter.Write(list, resultPath);
 
             var item = ProjectHelpers.AddFileToProject(filePath, resultPath);
 
@@ -190,6 +132,14 @@ namespace MadsKristensen.EditorExtensions
         {
             var references = new HashSet<string>();
             var properties = GetProperties(cc.Members, new HashSet<string>(), references).ToList();
+            var internalEnums = cc.Members.OfType<CodeEnum>().ToList();
+            if (internalEnums != null)
+            {
+                foreach (var internalEnum in internalEnums)
+                {
+                    ProcessEnum(internalEnum, list);
+                }
+            }
             var dataContractAttribute = cc.Attributes.Cast<CodeAttribute>().Where(a => a.Name == "DataContract");
             string className = cc.Name;
             string nsName = GetNamespace(cc);

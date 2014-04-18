@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel.Composition;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Threading;
 using MadsKristensen.EditorExtensions.Settings;
 using Microsoft.CSS.Core;
@@ -106,7 +107,7 @@ namespace MadsKristensen.EditorExtensions.Css
                 if (rule == null || rules.Contains(rule))
                     continue;
 
-                var images = rule.Declarations.Where(d => d.PropertyName.Text.Contains("background"));
+                var images = rule.Declarations.Where(d => d.PropertyName != null && d.PropertyName.Text.Contains("background"));
 
                 foreach (Declaration image in images)
                 {
@@ -124,7 +125,7 @@ namespace MadsKristensen.EditorExtensions.Css
             UpdateDeclarationCache(e.Tree.StyleSheet);
         }
 
-        private void TreeItemsChanged(object sender, CssItemsChangedEventArgs e)
+        private async void TreeItemsChanged(object sender, CssItemsChangedEventArgs e)
         {
             foreach (ParseItem item in e.DeletedItems)
             {
@@ -135,11 +136,11 @@ namespace MadsKristensen.EditorExtensions.Css
             foreach (ParseItem item in e.InsertedItems)
             {
                 UpdateDeclarationCache(item);
-                UpdateEmbeddedImageValues(item);
+                await UpdateEmbeddedImageValues(item);
             }
         }
 
-        private void UpdateEmbeddedImageValues(ParseItem item)
+        private async Task UpdateEmbeddedImageValues(ParseItem item)
         {
             if (!WESettings.Instance.Css.SyncBase64ImageValues)
                 return;
@@ -148,9 +149,9 @@ namespace MadsKristensen.EditorExtensions.Css
 
             if (dec != null && Cache.Contains(dec))
             {
-                var url = (UrlItem)dec.Values.First();
+                var url = dec.Values.FirstOrDefault() as UrlItem;
 
-                if (!url.IsValid || url.UrlString == null || url.UrlString.Text.Contains(";base64,"))
+                if (url == null || !url.IsValid || url.UrlString == null || url.UrlString.Text.Contains(";base64,"))
                     return;
 
                 var matches = Cache.Where(d => d.IsValid && d != dec && d.Parent == dec.Parent &&
@@ -162,7 +163,7 @@ namespace MadsKristensen.EditorExtensions.Css
 
                 string urlText = url.UrlString.Text.Trim('\'', '"');
                 string filePath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(_buffer.GetFileName()), urlText));
-                string b64UrlText = FileHelpers.ConvertToBase64(filePath);
+                string b64UrlText = await FileHelpers.ConvertToBase64(filePath);
                 string b64Url = url.Text.Replace(urlText, b64UrlText);
                 IEnumerable<Tuple<SnapshotSpan, string>> changes = matches.Reverse().SelectMany(match =>
                 {
@@ -178,7 +179,7 @@ namespace MadsKristensen.EditorExtensions.Css
                     return new[] { new Tuple<SnapshotSpan, string>(span, urlText), new Tuple<SnapshotSpan, string>(b64Span, b64Url) };
                 });
 
-                Dispatcher.CurrentDispatcher.InvokeAsync(() =>
+                await Dispatcher.CurrentDispatcher.InvokeAsync(() =>
                 {
                     using (ITextEdit edit = _buffer.CreateEdit())
                     {
@@ -192,13 +193,6 @@ namespace MadsKristensen.EditorExtensions.Css
                     }
                 });
             }
-        }
-
-        private string GetValueText(Declaration dec)
-        {
-            int start = dec.Colon.AfterEnd;
-            int length = dec.AfterEnd - start;
-            return _buffer.CurrentSnapshot.GetText(start, length);
         }
 
         public event EventHandler<ClassificationChangedEventArgs> ClassificationChanged;

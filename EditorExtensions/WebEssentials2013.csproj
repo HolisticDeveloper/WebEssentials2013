@@ -119,6 +119,9 @@
     <Reference Include="Microsoft.JSON.Editor">
       <HintPath>$(DevEnvDir)\Extensions\Microsoft\Web Tools\Languages\Microsoft.JSON.Editor.dll</HintPath>
     </Reference>
+    <Reference Include="Microsoft.Practices.TransientFaultHandling.Core">
+      <HintPath>..\packages\TransientFaultHandling.Core.5.1.1209.1\lib\NET4\Microsoft.Practices.TransientFaultHandling.Core.dll</HintPath>
+    </Reference>
     <Reference Include="Microsoft.VisualStudio.JSLS" />
     <Reference Include="Microsoft.VisualStudio.Language.StandardClassification" />
     <Reference Include="Microsoft.CSS.Core, Version=12.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
@@ -303,6 +306,7 @@
     <Compile Include="CSS\Completion\Filter\ColorSwatchCompletionListFilter.cs" />
     <Compile Include="CSS\Completion\Filter\HideUncommonCompletionListFilter.cs" />
     <Compile Include="HTML\Outlining\HtmlRegionTagger.cs" />
+    <Compile Include="HTML\Validation\BootstrapColumnsValidator.cs" />
     <Compile Include="IcedCoffeeScript\ContentType\IcedCoffeeScriptContentTypeDefinition.cs" />
     <Compile Include="JavaScript\Outlining\JavaScriptArrayOutlining.cs">
       <SubType>Code</SubType>
@@ -341,6 +345,9 @@
     <Compile Include="Markdown\Classify\MarkdownParser.cs" />
     <Compile Include="SCSS\SmartTags\ScssExtractVariableSmartTagProvider.cs" />
     <Compile Include="Shared\Completion\ColorSwatchIntellisenseProvider.cs" />
+    <Compile Include="Shared\ExtensionMethods\TaskExtensions\PolicyFactory.cs" />
+    <Compile Include="Shared\ExtensionMethods\TaskExtensions\Strategies\FileTransientErrorDetectionStrategy.cs" />
+    <Compile Include="Shared\ExtensionMethods\TaskExtensions\TaskExtensions.cs" />
     <Compile Include="Shared\Helpers\SourceMapNode.cs" />
     <Compile Include="Shared\Helpers\CssSourceMap.cs" />
     <Compile Include="Shared\Helpers\Base64Vlq.cs" />
@@ -350,6 +357,7 @@
     <Compile Include="RobotsTxt\Classify\RobotsTxtClassifier.cs" />
     <Compile Include="RobotsTxt\Classify\RobotsTxtClassifierProvider.cs" />
     <Compile Include="TypeScript\Compilers\TypeScriptCompilationNotifierProvider.cs" />
+    <Compile Include="TypeScript\MenuItems\HubsT4.cs" />
     <Compile Include="WebVtt\ContentType\WebVttContentTypeDefinition.cs" />
     <Compile Include="WebVtt\Classify\WebVttClassificationTypes.cs" />
     <Compile Include="WebVtt\Classify\WebVttClassifier.cs" />
@@ -493,7 +501,6 @@
     <Compile Include="CSS\Completion\CompletionListEntry.cs" />
     <Compile Include="CSS\Completion\CompletionProviders\AnimationNameCompletionProvider.cs" />
     <Compile Include="CSS\Completion\CompletionProviders\ColorCompletionProvider.cs" />
-    <Compile Include="CSS\Completion\CompletionProviders\FontFamilyCompletionProvider.cs" />
     <Compile Include="CSS\Completion\CompletionProviders\RegionCompletionProvider.cs" />
     <Compile Include="CSS\Completion\CompletionProviders\FontCompletionProvider.cs" />
     <Compile Include="CSS\Completion\ContextProviders\LessPseudoContextProvider.cs" />
@@ -905,6 +912,9 @@
     <Content Include="Resources\Tools\png.cmd">
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
+    <Content Include="Resources\settings-defaults\Hubs.tt">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
     <None Include="Source.extension.vsixmanifest" />
     <Resource Include="Resources\Images\vsgallery.png" />
     <Content Include="CSS\Schemas\css-we-settings.xml">
@@ -967,7 +977,6 @@
       <SubType>Designer</SubType>
     </Page>
   </ItemGroup>
-  <ItemGroup />
   <PropertyGroup>
     <UseCodebase>true</UseCodebase>
   </PropertyGroup>

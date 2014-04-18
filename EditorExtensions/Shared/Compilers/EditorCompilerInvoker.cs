@@ -43,7 +43,7 @@ namespace MadsKristensen.EditorExtensions.Compilers
         private void Document_FileActionOccurred(object sender, TextDocumentFileActionEventArgs e)
         {
             if (e.FileActionType == FileActionTypes.ContentSavedToDisk)
-                CompileAsync(e.FilePath).DontWait("compiling " + e.FilePath);
+                CompileAsync(e.FilePath).DoNotWait("compiling " + e.FilePath);
         }
 
         ///<summary>Occurs when the file has been compiled (on both success and failure).</summary>
@@ -51,10 +51,20 @@ namespace MadsKristensen.EditorExtensions.Compilers
 
         ///<summary>Raises the CompilationReady event.</summary>
         ///<param name="e">A CompilerResultEventArgs object that provides the event data.</param>
-        protected virtual void OnCompilationReady(CompilerResultEventArgs e)
+        protected virtual void OnCompilationReady(CompilerResultEventArgs e) { }
+
+        ///<summary>
+        ///  Raises the CompilationReady event.
+        ///  In case of cached results, it will propogate a flag to event handler
+        ///  to avoid chained compilation for CSS preprocessors.
+        ///  (see https://github.com/madskristensen/WebEssentials2013/issues/916).
+        ///</summary>
+        ///<param name="e">A CompilerResultEventArgs object that provides the event data.</param>
+        ///<param name="cached">A flag to indicate if event is raised for cached results.</param>
+        private void OnCompilationReady(CompilerResultEventArgs e, bool cached = false)
         {
             if (CompilationReady != null)
-                CompilationReady(this, e);
+                CompilationReady(cached, e);
         }
 
         protected virtual Task CompileAsync(string sourcePath)
@@ -63,7 +73,7 @@ namespace MadsKristensen.EditorExtensions.Compilers
             return InitiateCompilationAsync(sourcePath, save: CompilerRunner.Settings.CompileOnSave).HandleErrors("compiling " + sourcePath);
         }
 
-        public void RequestCompilationResult(bool cached)
+        public async void RequestCompilationResult(bool cached)
         {
             if (cached && CompilerRunner.Settings.CompileOnSave)
             {
@@ -71,19 +81,19 @@ namespace MadsKristensen.EditorExtensions.Compilers
 
                 if (File.Exists(targetPath))
                 {
-                    OnCompilationReady(new CompilerResultEventArgs(CompilerResultFactory.GenerateResult(Document.FilePath, targetPath)));
+                    OnCompilationReady(new CompilerResultEventArgs(await CompilerResultFactory.GenerateResult(Document.FilePath, targetPath)), true);
 
                     return;
                 }
             }
 
-            InitiateCompilationAsync(Document.FilePath, save: false).DontWait("compiling " + Document.FilePath);
+            InitiateCompilationAsync(Document.FilePath, false, cached).DoNotWait("compiling " + Document.FilePath);
         }
 
-        async Task InitiateCompilationAsync(string sourcePath, bool save)
+        async Task InitiateCompilationAsync(string sourcePath, bool save, bool cached = false)
         {
             var result = await CompilerRunner.CompileAsync(sourcePath, save);
-            OnCompilationReady(new CompilerResultEventArgs(result));
+            OnCompilationReady(new CompilerResultEventArgs(result), cached);
         }
     }
 
@@ -109,15 +119,18 @@ namespace MadsKristensen.EditorExtensions.Compilers
             }
             base.Dispose(disposing);
         }
+
         protected override Task CompileAsync(string sourcePath)
         {
             _provider.Tasks.Clear();
             return base.CompileAsync(sourcePath);
         }
+
         protected override void OnCompilationReady(CompilerResultEventArgs e)
         {
             foreach (var error in e.CompilerResult.Errors)
                 CreateTask(error);
+
             base.OnCompilationReady(e);
         }
 

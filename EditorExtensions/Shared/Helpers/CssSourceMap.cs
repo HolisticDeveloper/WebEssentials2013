@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using System.Web.Helpers;
 using Microsoft.CSS.Core;
 using Microsoft.CSS.Editor;
@@ -35,26 +36,30 @@ namespace MadsKristensen.EditorExtensions
         private CssSourceMap()
         { }
 
-        public CssSourceMap(string targetFileName, string mapFileName, IContentType contentType)
+        public async static Task<CssSourceMap> Create(string targetFileContents, string mapFileContents, string directory, IContentType contentType)
         {
-            Initialize(targetFileName, mapFileName, contentType);
+            CssSourceMap map = new CssSourceMap();
+
+            await Task.Run(() => map.Initialize(targetFileContents, mapFileContents, directory, contentType));
+
+            return map;
         }
 
-        private void Initialize(string targetFileName, string mapFileName, IContentType contentType)
+        private void Initialize(string targetFileContents, string mapFileContents, string directory, IContentType contentType)
         {
             _contentType = contentType;
             _parser = CssParserLocator.FindComponent(_contentType).CreateParser();
-            _directory = Path.GetDirectoryName(mapFileName);
-            PopulateMap(targetFileName, mapFileName); // Begin two-steps initialization.
+            _directory = directory;
+            PopulateMap(targetFileContents, mapFileContents); // Begin two-steps initialization.
         }
 
-        private void PopulateMap(string targetFileName, string mapFileName)
+        private void PopulateMap(string targetFileContents, string mapFileContents)
         {
-            var map = new SourceMapDefinition();
+            SourceMapDefinition map;
 
             try
             {
-                map = Json.Decode<SourceMapDefinition>(File.ReadAllText(mapFileName));
+                map = Json.Decode<SourceMapDefinition>(mapFileContents);
             }
             catch
             {
@@ -66,10 +71,10 @@ namespace MadsKristensen.EditorExtensions
             if (MapNodes.Count() == 0)
                 return;
 
-            CollectRules(targetFileName);
+            CollectRules(targetFileContents).DoNotWait("collecting maps");
         }
 
-        private void CollectRules(string targetFileName)
+        private async Task CollectRules(string targetFileContents)
         {
             // Sort collection for source file.
             MapNodes = MapNodes.OrderBy(x => x.SourceFilePath)
@@ -77,24 +82,22 @@ namespace MadsKristensen.EditorExtensions
                                .ThenBy(x => x.OriginalColumn);
 
             if (_contentType.DisplayName.Equals("SCSS", StringComparison.OrdinalIgnoreCase))
-                MapNodes = CorrectionsForScss(File.ReadAllText(targetFileName));
+                MapNodes = await CorrectionsForScss(targetFileContents);
 
-            MapNodes = ProcessSourceMaps();
+            MapNodes = await ProcessSourceMaps();
 
             // Sort collection for generated file.
             MapNodes = MapNodes.OrderBy(x => x.GeneratedLine)
                                .ThenBy(x => x.GeneratedColumn);
 
-            MapNodes = ProcessGeneratedMaps(File.ReadAllText(targetFileName));
-
-            MapNodes.Any();
+            MapNodes = ProcessGeneratedMaps(targetFileContents);
         }
 
         // A very ugly hack for a very ugly bug: https://github.com/hcatlin/libsass/issues/324
         // Remove this and its caller in previous method, when it is fixed in original repo
         // and https://github.com/andrew/node-sass/ is released with the fix.
         // Overwriting all positions belonging to original/source file.
-        private IEnumerable<CssSourceMapNode> CorrectionsForScss(string cssFileContents)
+        private async Task<IEnumerable<CssSourceMapNode>> CorrectionsForScss(string cssFileContents)
         {
             // Sort collection for generated file.
             var sortedForGenerated = MapNodes.OrderBy(x => x.GeneratedLine)
@@ -108,7 +111,7 @@ namespace MadsKristensen.EditorExtensions
             int start = 0, indexInCollection, targetDepth;
             string fileContents = null, simpleText = "";
             var result = new List<CssSourceMapNode>();
-            var contentCollection = new Dictionary<string, string>(); // So we don't have to read file for each map item.
+            var contentCollection = new HashSet<string>(); // So we don't have to read file for each map item.
             var parser = new CssParser();
 
             cssStyleSheet = parser.Parse(cssFileContents, false);
@@ -116,14 +119,14 @@ namespace MadsKristensen.EditorExtensions
             foreach (var node in MapNodes)
             {
                 // Cache source file contents.
-                if (!contentCollection.ContainsKey(node.SourceFilePath))
+                if (!contentCollection.Contains(node.SourceFilePath))
                 {
                     if (!File.Exists(node.SourceFilePath)) // Lets say someone deleted the reference file.
                         continue;
 
-                    fileContents = File.ReadAllText(node.SourceFilePath);
+                    fileContents = await FileHelpers.ReadAllTextRetry(node.SourceFilePath);
 
-                    contentCollection.Add(node.SourceFilePath, fileContents);
+                    contentCollection.Add(node.SourceFilePath);
 
                     styleSheet = _parser.Parse(fileContents, false);
                 }
@@ -172,6 +175,9 @@ namespace MadsKristensen.EditorExtensions
                 else
                     rule = scssRuleBlock.RuleSets.First();
 
+                if (rule == null)
+                    continue;
+
                 // Because even on the same TreeDepth, there may be mulitple ruleblocks
                 // and the selector names may include & or other symbols which are diff
                 // fromt he generated counterpart, here is the guess work
@@ -201,7 +207,7 @@ namespace MadsKristensen.EditorExtensions
             return result;
         }
 
-        private IEnumerable<CssSourceMapNode> ProcessSourceMaps()
+        private async Task<IEnumerable<CssSourceMapNode>> ProcessSourceMaps()
         {
             ParseItem item = null;
             Selector selector = null;
@@ -209,19 +215,19 @@ namespace MadsKristensen.EditorExtensions
             int start;
             var fileContents = "";
             var result = new List<CssSourceMapNode>();
-            var contentCollection = new Dictionary<string, string>(); // So we don't have to read file for each map item.
+            var contentCollection = new HashSet<string>();
 
             foreach (var node in MapNodes)
             {
                 // Cache source file contents.
-                if (!contentCollection.ContainsKey(node.SourceFilePath))
+                if (!contentCollection.Contains(node.SourceFilePath))
                 {
                     if (!File.Exists(node.SourceFilePath)) // Lets say someone deleted the reference file.
                         continue;
 
-                    fileContents = File.ReadAllText(node.SourceFilePath);
+                    fileContents = await FileHelpers.ReadAllTextRetry(node.SourceFilePath);
 
-                    contentCollection.Add(node.SourceFilePath, fileContents);
+                    contentCollection.Add(node.SourceFilePath);
 
                     styleSheet = _parser.Parse(fileContents, false);
                 }
@@ -247,7 +253,7 @@ namespace MadsKristensen.EditorExtensions
             return result;
         }
 
-        private IEnumerable<CssSourceMapNode> ProcessGeneratedMaps(string fileContents)
+        private IEnumerable<CssSourceMapNode> ProcessGeneratedMaps(string cssfileContents)
         {
             ParseItem item = null;
             Selector selector = null;
@@ -257,11 +263,11 @@ namespace MadsKristensen.EditorExtensions
             var parser = new CssParser();
             var result = new List<CssSourceMapNode>();
 
-            styleSheet = parser.Parse(fileContents, false);
+            styleSheet = parser.Parse(cssfileContents, false);
 
             foreach (var node in MapNodes)
             {
-                start = fileContents.NthIndexOfCharInString('\n', node.GeneratedLine);
+                start = cssfileContents.NthIndexOfCharInString('\n', node.GeneratedLine);
                 start += node.GeneratedColumn;
 
                 item = styleSheet.ItemAfterPosition(start);
@@ -312,11 +318,11 @@ namespace MadsKristensen.EditorExtensions
             return result;
         }
 
-        private struct SourceMapDefinition
+        private class SourceMapDefinition
         {
-            public string file;
-            public string mappings;
-            public string[] sources;
+            public string file { get; set; }
+            public string mappings { get; set; }
+            public string[] sources { get; set; }
         }
     }
 }

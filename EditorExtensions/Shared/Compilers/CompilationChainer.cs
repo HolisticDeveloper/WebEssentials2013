@@ -15,7 +15,6 @@ namespace MadsKristensen.EditorExtensions.Compilers
     [TextViewRole(PredefinedTextViewRoles.Document)]
     [ContentType("LESS")]
     [ContentType("SCSS")]
-
     class CompilationChainer : IVsTextViewCreationListener
     {
         [Import]
@@ -43,7 +42,7 @@ namespace MadsKristensen.EditorExtensions.Compilers
             var graph = GetGraph(contentType);
             notifier.CompilationReady += async (s, e) =>
             {
-                if (!settings.CompileOnSave || !settings.EnableChainCompilation)
+                if (!settings.CompileOnSave || !settings.EnableChainCompilation || (bool)s)
                     return;
 
                 var count = 0;
@@ -51,7 +50,7 @@ namespace MadsKristensen.EditorExtensions.Compilers
                 {
                     if (File.Exists(compilerRunner.GetTargetPath(file)))
                     {
-                        compilerRunner.CompileToDefaultOutputAsync(file).DontWait("compiling " + file);
+                        compilerRunner.CompileToDefaultOutputAsync(file).DoNotWait("compiling " + file);
                         count++;
                     }
                 }

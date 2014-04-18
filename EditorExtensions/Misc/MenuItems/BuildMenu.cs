@@ -9,7 +9,6 @@ using EnvDTE80;
 using MadsKristensen.EditorExtensions.Compilers;
 using MadsKristensen.EditorExtensions.Optimization.Minification;
 using MadsKristensen.EditorExtensions.SweetJs;
-using Microsoft.Html.Editor;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Utilities;
 using Microsoft.Web.Editor;
@@ -24,6 +23,8 @@ namespace MadsKristensen.EditorExtensions
 
         [Import]
         public IContentTypeRegistryService ContentTypes { get; set; }
+        [Import]
+        public IFileExtensionRegistryService FileExtensionRegistry { get; set; }
         [Import]
         public ProjectCompiler Compiler { get; set; }
 
@@ -43,7 +44,7 @@ namespace MadsKristensen.EditorExtensions
             //TODO: Iced CoffeeScript?
 
             CommandID cmdBundles = new CommandID(CommandGuids.guidBuildCmdSet, (int)CommandId.BuildBundles);
-            OleMenuCommand menuBundles = new OleMenuCommand((s, e) => UpdateBundleFiles(), cmdBundles);
+            OleMenuCommand menuBundles = new OleMenuCommand(async (s, e) => await UpdateBundleFiles(), cmdBundles);
             _mcs.AddCommand(menuBundles);
 
             CommandID cmdMinify = new CommandID(CommandGuids.guidBuildCmdSet, (int)CommandId.BuildMinify);
@@ -64,9 +65,9 @@ namespace MadsKristensen.EditorExtensions
             _mcs.AddCommand(command);
         }
 
-        public static void UpdateBundleFiles()
+        public async static Task UpdateBundleFiles()
         {
-            BundleFilesMenu.UpdateBundles(null, true);
+            await BundleFilesMenu.UpdateBundles(null, true);
         }
 
         private void Minify()
@@ -83,9 +84,9 @@ namespace MadsKristensen.EditorExtensions
                             .Where(f => extensions.Contains(Path.GetExtension(f)));
 
             // Perform expensive blocking work in parallel
-            Parallel.ForEach(files, file =>
-                MinificationSaveListener.ReMinify(
-                    ContentTypeManager.GetContentType(Path.GetExtension(file).TrimStart('.')),
+            Parallel.ForEach(files, async file =>
+                await MinificationSaveListener.ReMinify(
+                    FileExtensionRegistry.GetContentTypeForExtension(Path.GetExtension(file).TrimStart('.')),
                     file,
                     false
                 )
